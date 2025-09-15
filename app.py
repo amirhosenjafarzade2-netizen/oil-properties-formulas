@@ -2,7 +2,7 @@ import streamlit as st
 import math
 
 # Set Streamlit configuration as the first Streamlit command
-st.set_page_config(layout="wide", sidebar_state="expanded")
+st.set_page_config(layout="wide")
 
 def get_valid_float(value, min_val=None, max_val=None, error_message=None):
     """Validate float input within specified range."""
@@ -284,13 +284,22 @@ def main():
         "Vasquez and Beggs Undersaturated Oil Viscosity": vasquez_beggs_undersaturated_viscosity,
     }
     
-    # Customize sidebar width using CSS
+    # Customize sidebar width and ensure it stays visible
     st.markdown(
         """
         <style>
         [data-testid="stSidebar"] {
             min-width: 400px;
             max-width: 500px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            overflow-y: auto;
+        }
+        [data-testid="stSidebarNav"] {
+            position: sticky;
+            top: 0;
         }
         </style>
         """,
