@@ -1,7 +1,7 @@
 import streamlit as st
 import math
 
-# Set Streamlit configuration for wider sidebar
+# Set Streamlit configuration as the first Streamlit command
 st.set_page_config(layout="wide", sidebar_state="expanded")
 
 def get_valid_float(value, min_val=None, max_val=None, error_message=None):
