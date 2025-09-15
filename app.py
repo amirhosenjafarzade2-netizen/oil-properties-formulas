@@ -5,11 +5,13 @@ import json
 # Set Streamlit configuration as the first command
 st.set_page_config(layout="wide")
 
-# Initialize session state for input persistence
+# Initialize session state
 if "inputs" not in st.session_state:
     st.session_state.inputs = {}
-if "unit_system" not in st.session_state:
-    st.session_state.unit_system = "Imperial"
+if "selected_unit_system" not in st.session_state:
+    st.session_state.selected_unit_system = "Imperial"
+if "selected_formula" not in st.session_state:
+    st.session_state.selected_formula = "oil_density_1"
 
 # Conversion factors
 PSIA_TO_BAR = 0.0689476
@@ -47,8 +49,8 @@ def oil_density_2(ρob, Co, Pb, P, unit_system="Imperial"):
     ρo = ρob * math.exp(Co * (P - Pb))
     unit = "lbm/cu ft" if unit_system == "Imperial" else "kg/m³"
     if unit_system == "Metric":
-        ρo *= 16.0185
         ρob *= 16.0185
+        ρo *= 16.0185
     return ρo, unit
 
 @st.cache_data
@@ -97,13 +99,6 @@ def lasater_correlation(Yapi, Rsb, Tr, unit_system="Imperial"):
         Pb *= PSIA_TO_BAR
     return Mo, Yg, Pb, unit
 
-# Define other cached calculation functions (omitted for brevity, similar structure)
-# Assume similar modifications for unit conversions and caching for:
-# vasquez_beggs_bubble_point, standing_rs_correlation, lasater_rs_correlation,
-# vasquez_beggs_rs_correlation, standing_fvf, vasquez_beggs_fvf, oil_fvf,
-# vasquez_beggs_oil_compressibility, beggs_robinson_viscosity,
-# vasquez_beggs_undersaturated_viscosity
-
 def reset_inputs(formula_key):
     """Reset inputs for a specific formula."""
     if formula_key in st.session_state.inputs:
@@ -137,7 +132,7 @@ def oil_density_1_ui():
     col1, col2 = st.columns([1, 1])
     with col1:
         if st.button("Calculate Oil Density (Basic)", key=f"{formula_key}_calc"):
-            ρo, unit = oil_density_1(Yo, Yg, Rs, Bo, st.session_state.unit_system)
+            ρo, unit = oil_density_1(Yo, Yg, Rs, Bo, st.session_state.selected_unit_system)
             display_result(ρo, unit, "Oil density")
     with col2:
         if st.button("Reset Inputs", key=f"{formula_key}_reset"):
@@ -149,30 +144,63 @@ def oil_density_2_ui():
     if formula_key not in st.session_state.inputs:
         st.session_state.inputs[formula_key] = {"ρob": 30.0, "Co": 1e-7, "Pb": 50.0, "P": 50.0}
     
-    ρob = st.number_input("Oil density at bubble point (30 to 60 lbm/ft³)", min_value=30.0, max_value=60.0, value=st.session_state.inputs[formula_key]["ρob"], step=0.1, key=f"{formula_key}_ρob", help="Density of oil at bubble point pressure.")
-    Co = st.number_input("Oil isothermal compressibility (1e-7 to 1e-3 psi^-1)", min_value=1e-7, max_value=1e-3, value=st.session_state.inputs[formula_key]["Co"], step=1e-7, format="%.7f", key=f"{formula_key}_Co", help="Measure of oil volume change with pressure.")
-    Pb = st.number_input("Bubble point pressure (50 to 6000 psia)", min_value=50.0, max_value=6000.0, value=st.session_state.inputs[formula_key]["Pb"], step=1.0, key=f"{formula_key}_Pb", help="Pressure at which gas begins to come out of solution.")
-    P = st.number_input("Pressure (50 to 10000 psia)", min_value=50.0, max_value=10000.0, value=st.session_state.inputs[formula_key]["P"], step=1.0, key=f"{formula_key}_P", help="Reservoir pressure of interest.")
+    ρob = st.number_input(
+        f"Oil density at bubble point (30 to 60 {'lbm/ft³' if st.session_state.selected_unit_system == 'Imperial' else 'kg/m³'})",
+        min_value=30.0 if st.session_state.selected_unit_system == "Imperial" else 30.0 * 16.0185,
+        max_value=60.0 if st.session_state.selected_unit_system == "Imperial" else 60.0 * 16.0185,
+        value=st.session_state.inputs[formula_key]["ρob"],
+        step=0.1,
+        key=f"{formula_key}_ρob",
+        help="Density of oil at bubble point pressure."
+    )
+    Co = st.number_input(
+        f"Oil isothermal compressibility (1e-7 to 1e-3 {'psi^-1' if st.session_state.selected_unit_system == 'Imperial' else 'bar^-1'})",
+        min_value=1e-7,
+        max_value=1e-3,
+        value=st.session_state.inputs[formula_key]["Co"],
+        step=1e-7,
+        format="%.7f",
+        key=f"{formula_key}_Co",
+        help="Measure of oil volume change with pressure."
+    )
+    Pb = st.number_input(
+        f"Bubble point pressure (50 to 6000 {'psia' if st.session_state.selected_unit_system == 'Imperial' else 'bar'})",
+        min_value=50.0 if st.session_state.selected_unit_system == "Imperial" else 50.0 * PSIA_TO_BAR,
+        max_value=6000.0 if st.session_state.selected_unit_system == "Imperial" else 6000.0 * PSIA_TO_BAR,
+        value=st.session_state.inputs[formula_key]["Pb"],
+        step=1.0,
+        key=f"{formula_key}_Pb",
+        help="Pressure at which gas begins to come out of solution."
+    )
+    P = st.number_input(
+        f"Pressure (50 to 10000 {'psia' if st.session_state.selected_unit_system == 'Imperial' else 'bar'})",
+        min_value=50.0 if st.session_state.selected_unit_system == "Imperial" else 50.0 * PSIA_TO_BAR,
+        max_value=10000.0 if st.session_state.selected_unit_system == "Imperial" else 10000.0 * PSIA_TO_BAR,
+        value=st.session_state.inputs[formula_key]["P"],
+        step=1.0,
+        key=f"{formula_key}_P",
+        help="Reservoir pressure of interest."
+    )
     
-    if st.session_state.unit_system == "Metric":
-        ρob *= 16.0185
-        Pb *= PSIA_TO_BAR
-        P *= PSIA_TO_BAR
+    # Convert inputs to Imperial for calculation
+    ρob_calc = ρob / 16.0185 if st.session_state.selected_unit_system == "Metric" else ρob
+    Pb_calc = Pb / PSIA_TO_BAR if st.session_state.selected_unit_system == "Metric" else Pb
+    P_calc = P / PSIA_TO_BAR if st.session_state.selected_unit_system == "Metric" else P
     
     st.session_state.inputs[formula_key] = {"ρob": ρob, "Co": Co, "Pb": Pb, "P": P}
     
     col1, col2 = st.columns([1, 1])
     with col1:
         if st.button("Calculate Oil Density (At Pressure)", key=f"{formula_key}_calc"):
-            ρo, result = oil_density_2(ρob, Co, Pb, P, st.session_state.unit_system)
+            ρo, result = oil_density_2(ρob_calc, Co, Pb_calc, P_calc, st.session_state.selected_unit_system)
             if ρo is None:
                 st.error(result)
             else:
                 display_result(ρo, result, "Oil density")
                 # Generate plot
-                pressures = list(range(int(Pb), int(min(P + 1000, 10000)), 100))
-                densities = [ρob * math.exp(Co * (p - Pb)) for p in pressures]
-                if st.session_state.unit_system == "Metric":
+                pressures = list(range(int(Pb_calc), int(min(P_calc + 1000, 10000)), 100))
+                densities = [ρob_calc * math.exp(Co * (p - Pb_calc)) for p in pressures]
+                if st.session_state.selected_unit_system == "Metric":
                     pressures = [p * PSIA_TO_BAR for p in pressures]
                     densities = [d * 16.0185 for d in densities]
                     p_unit = "bar"
@@ -228,9 +256,6 @@ def specific_gravity_3_ui():
     with col2:
         if st.button("Reset Inputs", key=f"{formula_key}_reset"):
             reset_inputs(formula_key)
-
-# Define UI functions for other calculations (omitted for brevity, similar structure)
-# Each function follows the same pattern: session state for inputs, help text, reset button, styled results
 
 def help_section():
     st.subheader("Help & Documentation")
@@ -295,7 +320,9 @@ def main():
     )
     
     st.sidebar.header("Formulas Menu")
-    st.session_state.unit_system = st.sidebar.selectbox("Unit System", ["Imperial", "Metric"], key="unit_system")
+    unit_system = st.sidebar.selectbox("Unit System", ["Imperial", "Metric"], key="unit_system_select")
+    if unit_system != st.session_state.selected_unit_system:
+        st.session_state.selected_unit_system = unit_system
     
     with st.sidebar.expander("Density Calculations"):
         if st.button("Oil Density (Basic)", key="sidebar_oil_density_1"):
@@ -315,19 +342,17 @@ def main():
         if st.button("Vasquez and Beggs Bubble Point Correlation", key="sidebar_vasquez_beggs_bubble_point"):
             st.session_state.selected_formula = "vasquez_beggs_bubble_point"
     
-    # Add other expanders for Rs Correlations, Formation Volume Factor, etc.
-    
     with st.sidebar.expander("Help"):
         if st.button("View Documentation", key="sidebar_help"):
             st.session_state.selected_formula = "help"
     
-    # Display selected formula
+    # Formula options
     formula_options = {
         "oil_density_1": oil_density_1_ui,
         "oil_density_2": oil_density_2_ui,
         "specific_gravity_3": specific_gravity_3_ui,
-        # Add other formula keys and UI functions
         "help": help_section
+        # Add other formula UI functions here
     }
     
     selected_formula = st.session_state.get("selected_formula", "oil_density_1")
