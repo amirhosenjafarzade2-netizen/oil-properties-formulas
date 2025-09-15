@@ -1,6 +1,9 @@
 import streamlit as st
 import math
 
+# Set Streamlit configuration for wider sidebar
+st.set_page_config(layout="wide", sidebar_state="expanded")
+
 def get_valid_float(value, min_val=None, max_val=None, error_message=None):
     """Validate float input within specified range."""
     try:
@@ -260,7 +263,7 @@ def vasquez_beggs_undersaturated_viscosity():
 
 def main():
     st.title("Oil Properties Calculator")
-    st.markdown("Select a calculation from the sidebar to compute oil and gas properties.")
+    st.markdown("Select a formula from the sidebar to compute oil and gas properties.")
     
     menu_options = {
         "Oil Density (Basic)": oil_density_1,
@@ -281,8 +284,21 @@ def main():
         "Vasquez and Beggs Undersaturated Oil Viscosity": vasquez_beggs_undersaturated_viscosity,
     }
     
-    st.sidebar.header("Calculation Menu")
-    choice = st.sidebar.selectbox("Select Calculation", list(menu_options.keys()))
+    # Customize sidebar width using CSS
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebar"] {
+            min-width: 400px;
+            max-width: 500px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    st.sidebar.header("Formulas Menu")
+    choice = st.sidebar.selectbox("Select Formula", list(menu_options.keys()))
     
     menu_options[choice]()
 
