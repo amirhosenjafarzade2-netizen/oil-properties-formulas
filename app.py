@@ -1,281 +1,290 @@
 import streamlit as st
 import math
-import json
 
-# Set Streamlit configuration as the first command
+# Set Streamlit configuration as the first Streamlit command
 st.set_page_config(layout="wide")
-
-# Initialize session state
-if "inputs" not in st.session_state:
-    st.session_state.inputs = {}
-if "selected_unit_system" not in st.session_state:
-    st.session_state.selected_unit_system = "Imperial"
-if "selected_formula" not in st.session_state:
-    st.session_state.selected_formula = "oil_density_1"
-
-# Conversion factors
-PSIA_TO_BAR = 0.0689476
-BAR_TO_PSIA = 1 / PSIA_TO_BAR
-F_TO_C = lambda f: (f - 32) * 5 / 9
-C_TO_F = lambda c: c * 9 / 5 + 32
 
 def get_valid_float(value, min_val=None, max_val=None, error_message=None):
     """Validate float input within specified range."""
     try:
         value = float(value)
         if min_val is not None and value < min_val:
-            st.error(error_message or f"Value must be at least {min_val}.")
+            if error_message:
+                st.error(error_message)
             return None
         if max_val is not None and value > max_val:
-            st.error(error_message or f"Value must be at most {max_val}.")
+            if error_message:
+                st.error(error_message)
             return None
         return value
     except (ValueError, TypeError):
-        st.error(error_message or "Please enter a valid numeric value.")
+        if error_message:
+            st.error("Invalid input. Please enter a numeric value.")
         return None
 
-@st.cache_data
-def oil_density_1(Yo, Yg, Rs, Bo, unit_system="Imperial"):
-    ρo = (350 * Yo + 0.0764 * Yg * Rs) / (5.615 * Bo)
-    unit = "lbm/cu ft" if unit_system == "Imperial" else "kg/m³"
-    if unit_system == "Metric":
-        ρo *= 16.0185  # Convert lbm/cu ft to kg/m³
-    return ρo, unit
-
-@st.cache_data
-def oil_density_2(ρob, Co, Pb, P, unit_system="Imperial"):
-    if P < Pb:
-        return None, "Pressure must be higher than bubble point pressure."
-    ρo = ρob * math.exp(Co * (P - Pb))
-    unit = "lbm/cu ft" if unit_system == "Imperial" else "kg/m³"
-    if unit_system == "Metric":
-        ρob *= 16.0185
-        ρo *= 16.0185
-    return ρo, unit
-
-@st.cache_data
-def specific_gravity_3(Yapi):
-    return 141.5 / (131.5 + Yapi)
-
-@st.cache_data
-def composition_known_density_4(masses, densities, unit_system="Imperial"):
-    total_mass = sum(masses)
-    total_volume = sum(m / ρ for m, ρ in zip(masses, densities))
-    if total_volume == 0:
-        return None, "Total volume cannot be zero."
-    ρt = total_mass / total_volume
-    unit = "lbm/ft³" if unit_system == "Imperial" else "kg/m³"
-    if unit_system == "Metric":
-        ρt *= 16.0185
-    return ρt, unit
-
-@st.cache_data
-def standing_bubble_point_5(Rsb, Yg, Tr, Yapi, unit_system="Imperial"):
-    yg = 0.00091 * Tr - 0.0125 * Yapi
-    Pb = 18 * ((Rsb / Yg) ** 0.83) * 10 ** yg
-    unit = "psia" if unit_system == "Imperial" else "bar"
-    if unit_system == "Metric":
-        Pb *= PSIA_TO_BAR
-    return Pb, unit
-
-@st.cache_data
-def lasater_correlation(Yapi, Rsb, Tr, unit_system="Imperial"):
-    if Yapi <= 40:
-        Mo = 630 - 10 * Yapi
-    else:
-        Mo = 73.110 * (Yapi ** -1.562)
-    Yo = 141.5 / (131.5 + Yapi)
-    Yg = (Rsb / 379.3) / ((Rsb / 379.3) + (350 * Yo / Mo))
-    if not (0.574 <= Yg <= 1.223):
-        return None, None, None, f"Gas specific gravity (Yg = {Yg:.5f}) is out of valid range (0.574 – 1.223)."
-    if Yg <= 0.6:
-        Pb = (0.679 * math.exp(2.786 * Yg) - 0.323) * Tr / Yg
-    else:
-        Pb = ((8.26 * Yg ** 3.56) + 1.95) * Tr / Yg
-    if not (48 <= Pb <= 5780):
-        return None, None, None, f"Bubble point pressure (Pb = {Pb:.2f}) is out of valid range (48 – 5780)."
-    unit = "psia" if unit_system == "Imperial" else "bar"
-    if unit_system == "Metric":
-        Pb *= PSIA_TO_BAR
-    return Mo, Yg, Pb, unit
-
-def reset_inputs(formula_key):
-    """Reset inputs for a specific formula."""
-    if formula_key in st.session_state.inputs:
-        del st.session_state.inputs[formula_key]
-    st.rerun()
-
-def display_result(value, unit, label):
-    """Display calculation result in a styled container."""
-    st.markdown(
-        f"""
-        <div style='background-color: #e6f3ff; padding: 10px; border-radius: 5px; margin: 10px 0;'>
-            <strong>{label}:</strong> {value:.5f} {unit}
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-def oil_density_1_ui():
+def oil_density_1():
     st.subheader("Oil Density (Basic)")
-    formula_key = "oil_density_1"
-    if formula_key not in st.session_state.inputs:
-        st.session_state.inputs[formula_key] = {"Yo": 0.6, "Yg": 0.55, "Rs": 0.0, "Bo": 1.0}
-    
-    Yo = st.number_input("Oil specific gravity (0.6 to 1.0)", min_value=0.6, max_value=1.0, value=st.session_state.inputs[formula_key]["Yo"], step=0.01, key=f"{formula_key}_Yo", help="Ratio of oil density to water density at standard conditions.")
-    Yg = st.number_input("Gas specific gravity (0.55 to 1.5)", min_value=0.55, max_value=1.5, value=st.session_state.inputs[formula_key]["Yg"], step=0.01, key=f"{formula_key}_Yg", help="Ratio of gas density to air density at standard conditions.")
-    Rs = st.number_input("Solution or dissolved gas (0 to 3000 scf/STB)", min_value=0.0, max_value=3000.0, value=st.session_state.inputs[formula_key]["Rs"], step=1.0, key=f"{formula_key}_Rs", help="Volume of gas dissolved in oil at standard conditions.")
-    Bo = st.number_input("Oil formation volume factor (1.0 to 2.0 bbl/STB)", min_value=1.0, max_value=2.0, value=st.session_state.inputs[formula_key]["Bo"], step=0.01, key=f"{formula_key}_Bo", help="Ratio of oil volume at reservoir conditions to stock tank conditions.")
-    
-    st.session_state.inputs[formula_key] = {"Yo": Yo, "Yg": Yg, "Rs": Rs, "Bo": Bo}
-    
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        if st.button("Calculate Oil Density (Basic)", key=f"{formula_key}_calc"):
-            ρo, unit = oil_density_1(Yo, Yg, Rs, Bo, st.session_state.selected_unit_system)
-            display_result(ρo, unit, "Oil density")
-    with col2:
-        if st.button("Reset Inputs", key=f"{formula_key}_reset"):
-            reset_inputs(formula_key)
+    Yo = st.number_input("Oil specific gravity (0.6 to 1.0)", min_value=0.6, max_value=1.0, value=0.6, step=0.01)
+    Yg = st.number_input("Gas specific gravity (0.55 to 1.5)", min_value=0.55, max_value=1.5, value=0.55, step=0.01)
+    Rs = st.number_input("Solution or dissolved gas (0 to 3000 scf/STB)", min_value=0.0, max_value=3000.0, value=0.0, step=1.0)
+    Bo = st.number_input("Oil formation volume factor (1.0 to 2.0 bbl/STB)", min_value=1.0, max_value=2.0, value=1.0, step=0.01)
+    if st.button("Calculate Oil Density (Basic)"):
+        ρo = (350 * Yo + 0.0764 * Yg * Rs) / (5.615 * Bo)
+        st.success(f"Oil density: {ρo:.5f} lbm/cu ft")
 
-def oil_density_2_ui():
+def oil_density_2():
     st.subheader("Oil Density (At Pressure)")
-    formula_key = "oil_density_2"
-    if formula_key not in st.session_state.inputs:
-        st.session_state.inputs[formula_key] = {"ρob": 30.0, "Co": 1e-7, "Pb": 50.0, "P": 50.0}
-    
-    ρob = st.number_input(
-        f"Oil density at bubble point (30 to 60 {'lbm/ft³' if st.session_state.selected_unit_system == 'Imperial' else 'kg/m³'})",
-        min_value=30.0 if st.session_state.selected_unit_system == "Imperial" else 30.0 * 16.0185,
-        max_value=60.0 if st.session_state.selected_unit_system == "Imperial" else 60.0 * 16.0185,
-        value=st.session_state.inputs[formula_key]["ρob"],
-        step=0.1,
-        key=f"{formula_key}_ρob",
-        help="Density of oil at bubble point pressure."
-    )
-    Co = st.number_input(
-        f"Oil isothermal compressibility (1e-7 to 1e-3 {'psi^-1' if st.session_state.selected_unit_system == 'Imperial' else 'bar^-1'})",
-        min_value=1e-7,
-        max_value=1e-3,
-        value=st.session_state.inputs[formula_key]["Co"],
-        step=1e-7,
-        format="%.7f",
-        key=f"{formula_key}_Co",
-        help="Measure of oil volume change with pressure."
-    )
-    Pb = st.number_input(
-        f"Bubble point pressure (50 to 6000 {'psia' if st.session_state.selected_unit_system == 'Imperial' else 'bar'})",
-        min_value=50.0 if st.session_state.selected_unit_system == "Imperial" else 50.0 * PSIA_TO_BAR,
-        max_value=6000.0 if st.session_state.selected_unit_system == "Imperial" else 6000.0 * PSIA_TO_BAR,
-        value=st.session_state.inputs[formula_key]["Pb"],
-        step=1.0,
-        key=f"{formula_key}_Pb",
-        help="Pressure at which gas begins to come out of solution."
-    )
-    P = st.number_input(
-        f"Pressure (50 to 10000 {'psia' if st.session_state.selected_unit_system == 'Imperial' else 'bar'})",
-        min_value=50.0 if st.session_state.selected_unit_system == "Imperial" else 50.0 * PSIA_TO_BAR,
-        max_value=10000.0 if st.session_state.selected_unit_system == "Imperial" else 10000.0 * PSIA_TO_BAR,
-        value=st.session_state.inputs[formula_key]["P"],
-        step=1.0,
-        key=f"{formula_key}_P",
-        help="Reservoir pressure of interest."
-    )
-    
-    # Convert inputs to Imperial for calculation
-    ρob_calc = ρob / 16.0185 if st.session_state.selected_unit_system == "Metric" else ρob
-    Pb_calc = Pb / PSIA_TO_BAR if st.session_state.selected_unit_system == "Metric" else Pb
-    P_calc = P / PSIA_TO_BAR if st.session_state.selected_unit_system == "Metric" else P
-    
-    st.session_state.inputs[formula_key] = {"ρob": ρob, "Co": Co, "Pb": Pb, "P": P}
-    
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        if st.button("Calculate Oil Density (At Pressure)", key=f"{formula_key}_calc"):
-            ρo, result = oil_density_2(ρob_calc, Co, Pb_calc, P_calc, st.session_state.selected_unit_system)
-            if ρo is None:
-                st.error(result)
-            else:
-                display_result(ρo, result, "Oil density")
-                # Generate plot
-                pressures = list(range(int(Pb_calc), int(min(P_calc + 1000, 10000)), 100))
-                densities = [ρob_calc * math.exp(Co * (p - Pb_calc)) for p in pressures]
-                if st.session_state.selected_unit_system == "Metric":
-                    pressures = [p * PSIA_TO_BAR for p in pressures]
-                    densities = [d * 16.0185 for d in densities]
-                    p_unit = "bar"
-                    d_unit = "kg/m³"
-                else:
-                    p_unit = "psia"
-                    d_unit = "lbm/ft³"
-                st.write("Oil Density vs. Pressure")
-                st.markdown(
-                    f"""
-                    ```chartjs
-                    {{
-                        "type": "line",
-                        "data": {{
-                            "labels": {json.dumps(pressures)},
-                            "datasets": [{{
-                                "label": "Oil Density ({d_unit})",
-                                "data": {json.dumps(densities)},
-                                "borderColor": "#1f77b4",
-                                "backgroundColor": "rgba(31, 119, 180, 0.2)",
-                                "fill": true
-                            }}]
-                        }},
-                        "options": {{
-                            "scales": {{
-                                "x": {{"title": {{"display": true, "text": "Pressure ({p_unit})"}}}},
-                                "y": {{"title": {{"display": true, "text": "Density ({d_unit})"}}}}
-                            }}
-                        }}
-                    }}
-                    ```
-                    """
-                )
-    with col2:
-        if st.button("Reset Inputs", key=f"{formula_key}_reset"):
-            reset_inputs(formula_key)
+    ρob = st.number_input("Oil density at bubble point (30 to 60 lbm/ft³)", min_value=30.0, max_value=60.0, value=30.0, step=0.1)
+    Co = st.number_input("Oil isothermal compressibility (1e-7 to 1e-3 psi^-1)", min_value=1e-7, max_value=1e-3, value=1e-7, step=1e-7, format="%.7f")
+    Pb = st.number_input("Bubble point pressure (50 to 6000 psia)", min_value=50.0, max_value=6000.0, value=50.0, step=1.0)
+    P = st.number_input("Pressure (50 to 10000 psia)", min_value=50.0, max_value=10000.0, value=50.0, step=1.0)
+    if st.button("Calculate Oil Density (At Pressure)"):
+        if P < Pb:
+            st.error("Pressure must be higher than bubble point pressure.")
+            return
+        ρo = ρob * math.exp(Co * (P - Pb))
+        st.success(f"Oil density: {ρo:.5f} lbm/cu ft")
 
-def specific_gravity_3_ui():
+def specific_gravity_3():
     st.subheader("Oil Specific Gravity from API")
-    formula_key = "specific_gravity_3"
-    if formula_key not in st.session_state.inputs:
-        st.session_state.inputs[formula_key] = {"Yapi": 10.0}
-    
-    Yapi = st.number_input("Oil gravity (10 to 60 API)", min_value=10.0, max_value=60.0, value=st.session_state.inputs[formula_key]["Yapi"], step=0.1, key=f"{formula_key}_Yapi", help="API gravity of oil at standard conditions.")
-    
-    st.session_state.inputs[formula_key] = {"Yapi": Yapi}
-    
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        if st.button("Calculate Oil Specific Gravity", key=f"{formula_key}_calc"):
-            Yo = specific_gravity_3(Yapi)
-            display_result(Yo, "", "Oil specific gravity")
-    with col2:
-        if st.button("Reset Inputs", key=f"{formula_key}_reset"):
-            reset_inputs(formula_key)
+    Yapi = st.number_input("Oil gravity (10 to 60 API)", min_value=10.0, max_value=60.0, value=10.0, step=0.1)
+    if st.button("Calculate Oil Specific Gravity"):
+        Yo = 141.5 / (131.5 + Yapi)
+        st.success(f"Oil specific gravity: {Yo:.5f}")
 
-def help_section():
-    st.subheader("Help & Documentation")
-    st.markdown("""
-    This app calculates oil and gas properties using industry-standard correlations. Below are the formulas used:
+def composition_known_density_4():
+    st.subheader("Mixture Density from Components")
+    C = st.number_input("Number of components (1 to 100)", min_value=1, max_value=100, value=1, step=1, format="%d")
+    total_mass = 0.0
+    total_volume = 0.0
+    if C > 0:
+        for i in range(1, C + 1):
+            st.write(f"Component {i}:")
+            m_i = st.number_input(f"Mass (0.1 to 1000 lbm) - Component {i}", min_value=0.1, max_value=1000.0, value=0.1, step=0.1, key=f"mass_{i}")
+            ρ_i = st.number_input(f"Density at standard conditions (10 to 100 lbm/ft³) - Component {i}", min_value=10.0, max_value=100.0, value=10.0, step=0.1, key=f"density_{i}")
+            V_i = m_i / ρ_i
+            total_mass += m_i
+            total_volume += V_i
+    if st.button("Calculate Mixture Density"):
+        if total_volume == 0:
+            st.error("Total volume cannot be zero.")
+            return
+        ρt = total_mass / total_volume
+        st.success(f"Mixture density: {ρt:.5f} lbm/ft³")
 
-    - **Oil Density (Basic)**: Calculates oil density using the formula `ρo = (350 * Yo + 0.0764 * Yg * Rs) / (5.615 * Bo)`.
-    - **Oil Density (At Pressure)**: Computes density with compressibility: `ρo = ρob * exp(Co * (P - Pb))`.
-    - **Oil Specific Gravity from API**: Converts API gravity to specific gravity: `Yo = 141.5 / (131.5 + Yapi)`.
-    - **Mixture Density from Components**: Sums mass and volume: `ρt = Σmi / ΣVi`.
-    - **Standing Bubble Point Correlation**: Uses `Pb = 18 * ((Rsb / Yg)^0.83) * 10^(0.00091*Tr - 0.0125*Yapi)`.
+def standing_bubble_point_5():
+    st.subheader("Standing Bubble Point Correlation")
+    Rsb = st.number_input("Solution GOR at P > Pb (20 to 2000 scf/STB)", min_value=20.0, max_value=2000.0, value=20.0, step=1.0)
+    Yg = st.number_input("Gas gravity (0.55 to 1.5)", min_value=0.55, max_value=1.5, value=0.55, step=0.01)
+    Tr = st.number_input("Reservoir temperature (70 to 300 °F)", min_value=70.0, max_value=300.0, value=70.0, step=1.0)
+    Yapi = st.number_input("Stock-tank oil gravity (10 to 60 API)", min_value=10.0, max_value=60.0, value=10.0, step=0.1)
+    if st.button("Calculate Standing Bubble Point"):
+        yg = 0.00091 * Tr - 0.0125 * Yapi
+        Pb = 18 * ((Rsb / Yg) ** 0.83) * 10 ** yg
+        st.success(f"Bubble point pressure: {Pb:.5f} psia")
 
-    For more details, refer to petroleum engineering references like Standing (1977), Lasater (1958), or Vasquez and Beggs (1980).
-    """)
+def lasater_correlation():
+    st.subheader("Lasater Bubble Point Correlation")
+    Yapi = st.number_input("Oil gravity (17.9 to 51.1 API)", min_value=17.9, max_value=51.1, value=17.9, step=0.1)
+    Rsb = st.number_input("Solution GOR (3 to 2905 scf/STB)", min_value=3.0, max_value=2905.0, value=3.0, step=1.0)
+    Tr = st.number_input("Reservoir temperature (82 to 272 °F)", min_value=82.0, max_value=272.0, value=82.0, step=1.0)
+    if st.button("Calculate Lasater Bubble Point"):
+        if Yapi <= 40:
+            Mo = 630 - 10 * Yapi
+        else:
+            Mo = 73.110 * (Yapi ** -1.562)
+        Yo = 141.5 / (131.5 + Yapi)
+        Yg = (Rsb / 379.3) / ((Rsb / 379.3) + (350 * Yo / Mo))
+        if not (0.574 <= Yg <= 1.223):
+            st.error(f"Gas specific gravity (Yg = {Yg:.5f}) is out of valid range (0.574 – 1.223).")
+            return
+        if Yg <= 0.6:
+            Pb = (0.679 * math.exp(2.786 * Yg) - 0.323) * Tr / Yg
+        else:
+            Pb = ((8.26 * Yg ** 3.56) + 1.95) * Tr / Yg
+        if not (48 <= Pb <= 5780):
+            st.error(f"Bubble point pressure (Pb = {Pb:.2f}) is out of valid range (48 – 5780).")
+            return
+        st.success(f"Molecular weight: {Mo:.5f} g/mol")
+        st.success(f"Gas specific gravity (Yg): {Yg:.5f}")
+        st.success(f"Bubble point pressure (Pb): {Pb:.2f} psia")
+
+def vasquez_beggs_bubble_point():
+    st.subheader("Vasquez and Beggs Bubble Point Correlation")
+    Yg = st.number_input("Gas specific gravity at Ps and Ts (0.56 to 1.18)", min_value=0.56, max_value=1.18, value=0.56, step=0.01)
+    Ts = st.number_input("Separator temperature (70 to 295 °F)", min_value=70.0, max_value=295.0, value=70.0, step=1.0)
+    Ps = st.number_input("Separator pressure (15 to 1000 psi)", min_value=15.0, max_value=1000.0, value=15.0, step=1.0)
+    Yapi = st.number_input("Oil gravity (16 to 58 API)", min_value=16.0, max_value=58.0, value=16.0, step=0.1)
+    Rsb = st.number_input("Solution GOR (20 to 2070 scf/STB)", min_value=20.0, max_value=2070.0, value=20.0, step=1.0)
+    Tr = st.number_input("Reservoir temperature (70 to 295 °F)", min_value=70.0, max_value=295.0, value=70.0, step=1.0)
+    if st.button("Calculate Vasquez and Beggs Bubble Point"):
+        try:
+            Ygc = Yg * (1 + 5.912e-5 * Yapi * Ts * math.log(Ps / 114.7))
+        except ValueError:
+            st.error("Invalid log value — make sure Ps > 0.")
+            return
+        if Yapi <= 30:
+            C1 = 0.0362
+            C2 = 1.0937
+            C3 = 25.72
+        else:
+            C1 = 0.0178
+            C2 = 1.187
+            C3 = 23.931
+        try:
+            Pb = (Rsb / (C1 * Yg * math.exp(C3 * Yapi / (Tr + 460)))) ** (1 / C2)
+        except (ValueError, ZeroDivisionError, OverflowError):
+            st.error("Error calculating Pb. Check input values.")
+            return
+        if not (50 <= Pb <= 5250):
+            st.error(f"Bubble point pressure (Pb = {Pb:.2f}) is out of valid range (50 – 5250).")
+            return
+        st.success(f"Corrected gas gravity (Ygc): {Ygc:.5f}")
+        st.success(f"Bubble point pressure (Pb): {Pb:.5f} psia")
+
+def standing_rs_correlation():
+    st.subheader("Standing Rs Correlation")
+    p = st.number_input("Pressure (50 to 10000 psia)", min_value=50.0, max_value=10000.0, value=50.0, step=1.0)
+    Tr = st.number_input("Reservoir temperature (70 to 300 °F)", min_value=70.0, max_value=300.0, value=70.0, step=1.0)
+    Yapi = st.number_input("Oil gravity (10 to 60 API)", min_value=10.0, max_value=60.0, value=10.0, step=0.1)
+    if st.button("Calculate Standing Rs"):
+        Yg = 0.00091 * Tr - 0.0125 * Yapi
+        Rs = Yg * (p / (18 * 10 ** Yg)) ** 1.204
+        st.success(f"Solution GOR: {Rs:.5f} scf/STB")
+
+def lasater_rs_correlation():
+    st.subheader("Lasater Rs Correlation")
+    Yo = st.number_input("Oil specific gravity (0.6 to 1.0)", min_value=0.6, max_value=1.0, value=0.6, step=0.01)
+    Yg = st.number_input("Gas specific gravity (0.55 to 1.5)", min_value=0.55, max_value=1.5, value=0.55, step=0.01)
+    Mo = st.number_input("Molecular weight of oil (100 to 600 g/mol)", min_value=100.0, max_value=600.0, value=100.0, step=1.0)
+    if st.button("Calculate Lasater Rs"):
+        Rs = (132755 * Yo * Yg) / (Mo * (1 - Yg))
+        st.success(f"Solution GOR: {Rs:.5f} scf/STB")
+
+def vasquez_beggs_rs_correlation():
+    st.subheader("Vasquez and Beggs Rs Correlation")
+    Yg = st.number_input("Gas specific gravity (0.55 to 1.5)", min_value=0.55, max_value=1.5, value=0.55, step=0.01)
+    p = st.number_input("Pressure (50 to 10000 psia)", min_value=50.0, max_value=10000.0, value=50.0, step=1.0)
+    Yapi = st.number_input("Oil gravity (10 to 60 API)", min_value=10.0, max_value=60.0, value=10.0, step=0.1)
+    T = st.number_input("Reservoir temperature (70 to 300 °F)", min_value=70.0, max_value=300.0, value=70.0, step=1.0)
+    if st.button("Calculate Vasquez and Beggs Rs"):
+        if Yapi <= 30:
+            C1 = 0.0362
+            C2 = 1.0937
+            C3 = 25.72
+        else:
+            C1 = 0.0178
+            C2 = 1.187
+            C3 = 23.931
+        Rs = C1 * Yg * (p ** C2) * math.exp((C3 * Yapi) / (T + 460))
+        st.success(f"Solution GOR: {Rs:.5f} scf/STB")
+
+def standing_fvf():
+    st.subheader("Standing Oil Formation Volume Factor")
+    Rs = st.number_input("Solution GOR (0 to 3000 scf/STB)", min_value=0.0, max_value=3000.0, value=0.0, step=1.0)
+    Yg = st.number_input("Gas specific gravity (0.55 to 1.5)", min_value=0.55, max_value=1.5, value=0.55, step=0.01)
+    Yo = st.number_input("Oil specific gravity (0.6 to 1.0)", min_value=0.6, max_value=1.0, value=0.6, step=0.01)
+    T = st.number_input("Reservoir temperature (70 to 300 °F)", min_value=70.0, max_value=300.0, value=70.0, step=1.0)
+    if st.button("Calculate Standing FVF"):
+        F = Rs * ((Yg / Yo) ** 0.5) + 1.25 * T
+        Bo = 0.972 + 0.000147 * (F ** 1.175)
+        st.success(f"Oil formation volume factor: {Bo:.5f} bbl/STB")
+
+def vasquez_beggs_fvf():
+    st.subheader("Vasquez and Beggs Oil Formation Volume Factor")
+    Rs = st.number_input("Solution GOR (20 to 2070 scf/STB)", min_value=20.0, max_value=2070.0, value=20.0, step=1.0)
+    T = st.number_input("Temperature (70 to 295 °F)", min_value=70.0, max_value=295.0, value=70.0, step=1.0)
+    Yapi = st.number_input("Stock tank oil gravity (16 to 58 API)", min_value=16.0, max_value=58.0, value=16.0, step=0.1)
+    Ygc = st.number_input("Corrected gas gravity (0.55 to 1.5)", min_value=0.55, max_value=1.5, value=0.55, step=0.01)
+    if st.button("Calculate Vasquez and Beggs FVF"):
+        if Yapi <= 30:
+            C1 = 0.0004677
+            C2 = 0.00001751
+            C3 = -0.00000001811
+        else:
+            C1 = 0.000467
+            C2 = 0.000011
+            C3 = 0.000000001337
+        Bo = 1 + C1 * Rs + C2 * (T - 60) * (Yapi / Ygc) + C3 * Rs * (T - 60) * (Yapi / Ygc)
+        st.success(f"Oil formation volume factor (Bo): {Bo:.5f} bbl/STB")
+
+def oil_fvf():
+    st.subheader("Oil Formation Volume Factor (General)")
+    Bob = st.number_input("Bo at bubble point pressure (1.0 to 2.0 bbl/STB)", min_value=1.0, max_value=2.0, value=1.0, step=0.01)
+    Pb = st.number_input("Bubble point pressure (50 to 6000 psia)", min_value=50.0, max_value=6000.0, value=50.0, step=1.0)
+    p = st.number_input("Current pressure (50 to 10000 psia)", min_value=50.0, max_value=10000.0, value=50.0, step=1.0)
+    co = st.number_input("Oil compressibility (1e-7 to 1e-3 1/psi)", min_value=1e-7, max_value=1e-3, value=1e-7, step=1e-7, format="%.7f")
+    if st.button("Calculate Oil FVF"):
+        exponent = co * (Pb - p)
+        if abs(exponent) > 700:
+            st.error("Exponent in calculation is too large, likely to cause overflow. Please check input values.")
+            return
+        Bo = Bob * math.exp(exponent)
+        st.success(f"Oil formation volume factor at pressure {p} psia: {Bo:.5f} bbl/STB")
+
+def vasquez_beggs_oil_compressibility():
+    st.subheader("Vasquez and Beggs Oil Isothermal Compressibility")
+    Rsb = st.number_input("Solution GOR (20 to 2070 scf/STB)", min_value=20.0, max_value=2070.0, value=20.0, step=1.0)
+    T = st.number_input("Temperature (70 to 295 °F)", min_value=70.0, max_value=295.0, value=70.0, step=1.0)
+    Yg = st.number_input("Gas gravity (0.55 to 1.5)", min_value=0.55, max_value=1.5, value=0.55, step=0.01)
+    Yapi = st.number_input("Oil gravity (16 to 58 API)", min_value=16.0, max_value=58.0, value=16.0, step=0.1)
+    p = st.number_input("Pressure of interest (50 to 10000 psia)", min_value=50.0, max_value=10000.0, value=50.0, step=1.0)
+    if st.button("Calculate Oil Compressibility"):
+        co = (5 * Rsb + 17.2 * T - 1180 * Yg + 12.61 * Yapi - 1433) / (p * 1e5)
+        st.success(f"Oil isothermal compressibility (co): {co:.8f} 1/psi")
+
+def beggs_robinson_viscosity():
+    st.subheader("Beggs and Robinson Oil Viscosity")
+    Rsb = st.number_input("Solution GOR (20 to 2070 scf/STB)", min_value=20.0, max_value=2070.0, value=20.0, step=1.0)
+    T = st.number_input("Temperature (70 to 295 °F)", min_value=70.0, max_value=295.0, value=70.0, step=1.0)
+    Yapi = st.number_input("Oil gravity (16 to 58 API)", min_value=16.0, max_value=58.0, value=16.0, step=0.1)
+    if st.button("Calculate Beggs and Robinson Viscosity"):
+        x = T ** (-1.163) * math.exp(6.9824 - 0.04658 * Yapi)
+        mu_od = 10 ** x - 1.0
+        A = 10.715 * (Rsb + 100) ** (-0.515)
+        B = 5.44 * (Rsb + 150) ** (-0.338)
+        mu_os = A * mu_od ** B
+        st.success(f"Dead-oil viscosity (μod): {mu_od:.4f} cP")
+        st.success(f"Saturated-oil viscosity (μos): {mu_os:.4f} cP")
+
+def vasquez_beggs_undersaturated_viscosity():
+    st.subheader("Vasquez and Beggs Undersaturated Oil Viscosity")
+    mu_ob = st.number_input("Saturated oil viscosity at bubble point (0.1 to 100 cP)", min_value=0.1, max_value=100.0, value=0.1, step=0.1)
+    p = st.number_input("Pressure of interest (50 to 10000 psia)", min_value=50.0, max_value=10000.0, value=50.0, step=1.0)
+    pb = st.number_input("Bubble point pressure (50 to 6000 psia)", min_value=50.0, max_value=6000.0, value=50.0, step=1.0)
+    if st.button("Calculate Undersaturated Viscosity"):
+        C1 = 2.6
+        C2 = 1.187
+        C3 = -11.513
+        C4 = -8.98e-5
+        m = C1 * p ** C2 * math.exp(C3 + C4 * p)
+        mu_o = mu_ob * (p / pb) ** m
+        st.success(f"Undersaturated oil viscosity (μo): {mu_o:.4f} cP")
 
 def main():
     st.title("Oil Properties Calculator")
-    st.markdown("Select a formula from the **Formulas Menu** in the sidebar to compute oil and gas properties.")
+    st.markdown("Select a formula from the sidebar to compute oil and gas properties.")
     
-    # Sidebar styling for permanent visibility and touch-friendliness
+    menu_options = {
+        "Oil Density (Basic)": oil_density_1,
+        "Oil Density (At Pressure)": oil_density_2,
+        "Oil Specific Gravity from API": specific_gravity_3,
+        "Mixture Density from Components": composition_known_density_4,
+        "Standing Bubble Point Correlation": standing_bubble_point_5,
+        "Lasater Bubble Point Correlation": lasater_correlation,
+        "Vasquez and Beggs Bubble Point Correlation": vasquez_beggs_bubble_point,
+        "Standing Rs Correlation": standing_rs_correlation,
+        "Lasater Rs Correlation": lasater_rs_correlation,
+        "Vasquez and Beggs Rs Correlation": vasquez_beggs_rs_correlation,
+        "Standing Oil Formation Volume Factor": standing_fvf,
+        "Vasquez and Beggs Oil Formation Volume Factor": vasquez_beggs_fvf,
+        "Oil Formation Volume Factor (General)": oil_fvf,
+        "Vasquez and Beggs Oil Isothermal Compressibility": vasquez_beggs_oil_compressibility,
+        "Beggs and Robinson Oil Viscosity": beggs_robinson_viscosity,
+        "Vasquez and Beggs Undersaturated Oil Viscosity": vasquez_beggs_undersaturated_viscosity,
+    }
+    
+    # Customize sidebar to be always visible and prevent collapse
     st.markdown(
         """
         <style>
@@ -293,26 +302,20 @@ def main():
             position: sticky;
             top: 0;
         }
-        [data-testid="stSidebarCollapseButton"] {
+        /* Disable collapse button and responsive hiding */
+        [data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] {
             display: none !important;
         }
+        /* Ensure sidebar is visible on all screen sizes */
         @media (max-width: 640px) {
             [data-testid="stSidebar"] {
                 display: block !important;
-                width: 300px !important;
+                width: 400px !important;
                 transform: translateX(0) !important;
             }
             [data-testid="stAppViewContainer"] {
-                margin-left: 300px !important;
+                margin-left: 400px !important;
             }
-        }
-        .stNumberInput input {
-            font-size: 16px;
-            padding: 8px;
-        }
-        .stButton button {
-            font-size: 16px;
-            padding: 10px 20px;
         }
         </style>
         """,
@@ -320,43 +323,9 @@ def main():
     )
     
     st.sidebar.header("Formulas Menu")
-    unit_system = st.sidebar.selectbox("Unit System", ["Imperial", "Metric"], key="unit_system_select")
-    if unit_system != st.session_state.selected_unit_system:
-        st.session_state.selected_unit_system = unit_system
+    choice = st.sidebar.selectbox("Select Formula", list(menu_options.keys()))
     
-    with st.sidebar.expander("Density Calculations"):
-        if st.button("Oil Density (Basic)", key="sidebar_oil_density_1"):
-            st.session_state.selected_formula = "oil_density_1"
-        if st.button("Oil Density (At Pressure)", key="sidebar_oil_density_2"):
-            st.session_state.selected_formula = "oil_density_2"
-        if st.button("Oil Specific Gravity from API", key="sidebar_specific_gravity_3"):
-            st.session_state.selected_formula = "specific_gravity_3"
-        if st.button("Mixture Density from Components", key="sidebar_composition_known_density_4"):
-            st.session_state.selected_formula = "composition_known_density_4"
-    
-    with st.sidebar.expander("Bubble Point Correlations"):
-        if st.button("Standing Bubble Point Correlation", key="sidebar_standing_bubble_point_5"):
-            st.session_state.selected_formula = "standing_bubble_point_5"
-        if st.button("Lasater Bubble Point Correlation", key="sidebar_lasater_correlation"):
-            st.session_state.selected_formula = "lasater_correlation"
-        if st.button("Vasquez and Beggs Bubble Point Correlation", key="sidebar_vasquez_beggs_bubble_point"):
-            st.session_state.selected_formula = "vasquez_beggs_bubble_point"
-    
-    with st.sidebar.expander("Help"):
-        if st.button("View Documentation", key="sidebar_help"):
-            st.session_state.selected_formula = "help"
-    
-    # Formula options
-    formula_options = {
-        "oil_density_1": oil_density_1_ui,
-        "oil_density_2": oil_density_2_ui,
-        "specific_gravity_3": specific_gravity_3_ui,
-        "help": help_section
-        # Add other formula UI functions here
-    }
-    
-    selected_formula = st.session_state.get("selected_formula", "oil_density_1")
-    formula_options.get(selected_formula, oil_density_1_ui)()
+    menu_options[choice]()
 
 if __name__ == "__main__":
     main()
