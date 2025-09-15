@@ -284,7 +284,7 @@ def main():
         "Vasquez and Beggs Undersaturated Oil Viscosity": vasquez_beggs_undersaturated_viscosity,
     }
     
-    # Customize sidebar width and ensure it stays visible
+    # Customize sidebar to be always visible and prevent collapse
     st.markdown(
         """
         <style>
@@ -296,10 +296,26 @@ def main():
             left: 0;
             height: 100vh;
             overflow-y: auto;
+            z-index: 9999;
         }
         [data-testid="stSidebarNav"] {
             position: sticky;
             top: 0;
+        }
+        /* Disable collapse button and responsive hiding */
+        [data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] {
+            display: none !important;
+        }
+        /* Ensure sidebar is visible on all screen sizes */
+        @media (max-width: 640px) {
+            [data-testid="stSidebar"] {
+                display: block !important;
+                width: 400px !important;
+                transform: translateX(0) !important;
+            }
+            [data-testid="stAppViewContainer"] {
+                margin-left: 400px !important;
+            }
         }
         </style>
         """,
