@@ -1,19 +1,11 @@
-# app.py
 import streamlit as st
 import math
-import numpy as np
-import pandas as pd
-import plotly.graph_objects as go
 
-# ------------------------------------------------------------------ #
-# 1. Streamlit page config (must be first)
-# ------------------------------------------------------------------ #
+# Set Streamlit configuration as the first Streamlit command
 st.set_page_config(layout="wide")
 
-# ------------------------------------------------------------------ #
-# 2. Helper – safe float conversion (unchanged)
-# ------------------------------------------------------------------ #
 def get_valid_float(value, min_val=None, max_val=None, error_message=None):
+    """Validate float input within specified range."""
     try:
         value = float(value)
         if min_val is not None and value < min_val:
@@ -30,9 +22,6 @@ def get_valid_float(value, min_val=None, max_val=None, error_message=None):
             st.error("Invalid input. Please enter a numeric value.")
         return None
 
-# ------------------------------------------------------------------ #
-# 3. ORIGINAL CALCULATORS (unchanged)
-# ------------------------------------------------------------------ #
 def oil_density_1():
     st.subheader("Oil Density (Basic)")
     Yo = st.number_input("Oil specific gravity (0.6 to 1.0)", min_value=0.6, max_value=1.0, value=0.6, step=0.01)
@@ -272,336 +261,10 @@ def vasquez_beggs_undersaturated_viscosity():
         mu_o = mu_ob * (p / pb) ** m
         st.success(f"Undersaturated oil viscosity (μo): {mu_o:.4f} cP")
 
-# ------------------------------------------------------------------ #
-# 4. LIVE SENSITIVITY ANALYZER
-# ------------------------------------------------------------------ #
-def live_sensitivity_analyzer():
-    st.subheader("Live Sensitivity Analyzer")
-    formula_options = {
-        "Oil Density (Basic)": oil_density_1_live,
-        "Oil Density (At Pressure)": oil_density_2_live,
-        "Oil Specific Gravity from API": specific_gravity_3_live,
-        "Mixture Density from Components": composition_known_density_4_live,
-        "Standing Bubble Point": standing_bubble_point_5_live,
-        "Lasater Bubble Point": lasater_correlation_live,
-        "Vasquez & Beggs Bubble Point": vasquez_beggs_bubble_point_live,
-        "Standing Rs": standing_rs_correlation_live,
-        "Lasater Rs": lasater_rs_correlation_live,
-        "Vasquez & Beggs Rs": vasquez_beggs_rs_correlation_live,
-        "Standing FVF": standing_fvf_live,
-        "Vasquez & Beggs FVF": vasquez_beggs_fvf_live,
-        "Oil FVF (General)": oil_fvf_live,
-        "Vasquez & Beggs Compressibility": vasquez_beggs_oil_compressibility_live,
-        "Beggs & Robinson Viscosity": beggs_robinson_viscosity_live,
-        "Vasquez & Beggs Undersaturated Viscosity": vasquez_beggs_undersaturated_viscosity_live,
-    }
-    selected = st.selectbox("Select formula to analyze", options=list(formula_options.keys()))
-    formula_options[selected]()
-
-# ------------------------------------------------------------------ #
-# 5. LIVE WRAPPERS (all fixed)
-# ------------------------------------------------------------------ #
-def oil_density_1_live():
-    inputs = {
-        "Yo": {"min":0.6,"max":1.0,"step":0.01,"value":0.8,"unit":""},
-        "Yg": {"min":0.55,"max":1.5,"step":0.01,"value":0.7,"unit":""},
-        "Rs": {"min":0.0,"max":3000.0,"step":10.0,"value":200.0,"unit":"scf/STB"},
-        "Bo": {"min":1.0,"max":2.0,"step":0.01,"value":1.2,"unit":"bbl/STB"},
-    }
-    def calc(v):
-        ρo = (350*v["Yo"] + 0.0764*v["Yg"]*v["Rs"]) / (5.615*v["Bo"])
-        return {"result":ρo,"unit":"lbm/ft³"}
-    _live_module("Oil Density (Basic)", inputs, calc)
-
-def oil_density_2_live():
-    inputs = {
-        "ρob": {"min":30.0,"max":60.0,"step":0.1,"value":45.0,"unit":"lbm/ft³"},
-        "Co": {"min":1e-7,"max":1e-3,"step":1e-7,"value":1e-6,"unit":"1/psi"},
-        "Pb": {"min":50.0,"max":6000.0,"step":10.0,"value":2000.0,"unit":"psia"},
-        "P": {"min":50.0,"max":10000.0,"step":10.0,"value":3000.0,"unit":"psia"},
-    }
-    def calc(v):
-        if v["P"] < v["Pb"]: return {"result":None,"unit":""}
-        ρo = v["ρob"] * math.exp(v["Co"]*(v["P"]-v["Pb"]))
-        return {"result":ρo,"unit":"lbm/ft³"}
-    _live_module("Oil Density (At Pressure)", inputs, calc)
-
-def specific_gravity_3_live():
-    inputs = {"Yapi": {"min":10.0,"max":60.0,"step":0.1,"value":30.0,"unit":"API"}}
-    def calc(v):
-        Yo = 141.5 / (131.5 + v["Yapi"])
-        return {"result":Yo,"unit":""}
-    _live_module("Oil Specific Gravity from API", inputs, calc)
-
-def composition_known_density_4_live():
-    inputs = {"C": {"min":1,"max":5,"step":1,"value":2,"unit":"components"}}
-    def calc(v):
-        C = int(v["C"])
-        total_mass = total_vol = 0.0
-        for i in range(1, C+1):
-            m = st.session_state.get(f"mass_{i}", 10.0)
-            ρ = st.session_state.get(f"dens_{i}", 50.0)
-            total_mass += m
-            total_vol += m / ρ
-        return {"result": total_mass/total_vol if total_vol > 0 else None, "unit": "lbm/ft³"}
-    _live_module("Mixture Density from Components", inputs, calc, dynamic_components=True)
-
-def standing_bubble_point_5_live():
-    inputs = {
-        "Rsb": {"min":20.0,"max":2000.0,"step":10.0,"value":500.0,"unit":"scf/STB"},
-        "Yg": {"min":0.55,"max":1.5,"step":0.01,"value":0.7,"unit":""},
-        "Tr": {"min":70.0,"max":300.0,"step":1.0,"value":180.0,"unit":"°F"},
-        "Yapi": {"min":10.0,"max":60.0,"step":0.1,"value":30.0,"unit":"API"},
-    }
-    def calc(v):
-        yg = 0.00091 * v["Tr"] - 0.0125 * v["Yapi"]
-        Pb = 18 * ((v["Rsb"] / v["Yg"]) ** 0.83) * 10 ** yg
-        return {"result": Pb, "unit": "psia"}
-    _live_module("Standing Bubble Point", inputs, calc)
-
-def lasater_correlation_live():
-    inputs = {
-        "Yapi": {"min":17.9,"max":51.1,"step":0.1,"value":30.0,"unit":"API"},
-        "Rsb": {"min":3.0,"max":2905.0,"step":10.0,"value":500.0,"unit":"scf/STB"},
-        "Tr": {"min":82.0,"max":272.0,"step":1.0,"value":150.0,"unit":"°F"},
-    }
-    def calc(v):
-        if v["Yapi"] <= 40:
-            Mo = 630 - 10 * v["Yapi"]
-        else:
-            Mo = 73.110 * (v["Yapi"] ** -1.562)
-        Yo = 141.5 / (131.5 + v["Yapi"])
-        Yg = (v["Rsb"] / 379.3) / ((v["Rsb"] / 379.3) + (350 * Yo / Mo))
-        if Yg <= 0.6:
-            Pb = (0.679 * math.exp(2.786 * Yg) - 0.323) * v["Tr"] / Yg
-        else:
-            Pb = ((8.26 * Yg ** 3.56) + 1.95) * v["Tr"] / Yg
-        return {"result": Pb, "unit": "psia"}
-    _live_module("Lasater Bubble Point", inputs, calc)
-
-def vasquez_beggs_bubble_point_live():
-    inputs = {
-        "Yg": {"min":0.56,"max":1.18,"step":0.01,"value":0.8,"unit":""},
-        "Ts": {"min":70.0,"max":295.0,"step":1.0,"value":120.0,"unit":"°F"},
-        "Ps": {"min":15.0,"max":1000.0,"step":1.0,"value":100.0,"unit":"psi"},
-        "Yapi": {"min":16.0,"max":58.0,"step":0.1,"value":30.0,"unit":"API"},
-        "Rsb": {"min":20.0,"max":2070.0,"step":10.0,"value":500.0,"unit":"scf/STB"},
-        "Tr": {"min":70.0,"max":295.0,"step":1.0,"value":180.0,"unit":"°F"},
-    }
-    def calc(v):
-        Ygc = v["Yg"] * (1 + 5.912e-5 * v["Yapi"] * v["Ts"] * math.log(v["Ps"] / 114.7))
-        if v["Yapi"] <= 30:
-            C1, C2, C3 = 0.0362, 1.0937, 25.72
-        else:
-            C1, C2, C3 = 0.0178, 1.187, 23.931
-        Pb = (v["Rsb"] / (C1 * v["Yg"] * math.exp(C3 * v["Yapi"] / (v["Tr"] + 460)))) ** (1 / C2)
-        return {"result": Pb, "unit": "psia"}
-    _live_module("Vasquez & Beggs Bubble Point", inputs, calc)
-
-def standing_rs_correlation_live():
-    inputs = {
-        "p": {"min":50.0,"max":10000.0,"step":10.0,"value":2000.0,"unit":"psia"},
-        "Tr": {"min":70.0,"max":300.0,"step":1.0,"value":180.0,"unit":"°F"},
-        "Yapi": {"min":10.0,"max":60.0,"step":0.1,"value":30.0,"unit":"API"},
-    }
-    def calc(v):
-        Yg = 0.00091 * v["Tr"] - 0.0125 * v["Yapi"]
-        Rs = Yg * (v["p"] / (18 * 10 ** Yg)) ** 1.204
-        return {"result": Rs, "unit": "scf/STB"}
-    _live_module("Standing Rs", inputs, calc)
-
-def lasater_rs_correlation_live():
-    inputs = {
-        "Yo": {"min":0.6,"max":1.0,"step":0.01,"value":0.85,"unit":""},
-        "Yg": {"min":0.55,"max":1.5,"step":0.01,"value":0.7,"unit":""},
-        "Mo": {"min":100.0,"max":600.0,"step":1.0,"value":200.0,"unit":"g/mol"},
-    }
-    def calc(v):
-        Rs = (132755 * v["Yo"] * v["Yg"]) / (v["Mo"] * (1 - v["Yg"]))
-        return {"result": Rs, "unit": "scf/STB"}
-    _live_module("Lasater Rs", inputs, calc)
-
-def vasquez_beggs_rs_correlation_live():
-    inputs = {
-        "Yg": {"min":0.55,"max":1.5,"step":0.01,"value":0.7,"unit":""},
-        "p": {"min":50.0,"max":10000.0,"step":10.0,"value":2000.0,"unit":"psia"},
-        "Yapi": {"min":10.0,"max":60.0,"step":0.1,"value":30.0,"unit":"API"},
-        "T": {"min":70.0,"max":300.0,"step":1.0,"value":180.0,"unit":"°F"},
-    }
-    def calc(v):
-        C1 = 0.0362 if v["Yapi"] <= 30 else 0.0178
-        C2 = 1.0937 if v["Yapi"] <= 30 else 1.187
-        C3  = 25.72 if v["Yapi"] <= 30 else 23.931
-        Rs = C1 * v["Yg"] * (v["p"] ** C2) * math.exp((C3 * v["Yapi"]) / (v["T"] + 460))
-        return {"result": Rs, "unit": "scf/STB"}
-    _live_module("Vasquez & Beggs Rs", inputs, calc)
-
-def standing_fvf_live():
-    inputs = {
-        "Rs": {"min":0.0,"max":3000.0,"step":10.0,"value":500.0,"unit":"scf/STB"},
-        "Yg": {"min":0.55,"max":1.5,"step":0.01,"value":0.7,"unit":""},
-        "Yo": {"min":0.6,"max":1.0,"step":0.01,"value":0.85,"unit":""},
-        "T": {"min":70.0,"max":300.0,"step":1.0,"value":180.0,"unit":"°F"},
-    }
-    def calc(v):
-        F = v["Rs"] * ((v["Yg"] / v["Yo"]) ** 0.5) + 1.25 * v["T"]
-        Bo = 0.972 + 0.000147 * (F ** 1.175)
-        return {"result": Bo, "unit": "bbl/STB"}
-    _live_module("Standing FVF", inputs, calc)
-
-def vasquez_beggs_fvf_live():
-    inputs = {
-        "Rs": {"min":20.0,"max":2070.0,"step":10.0,"value":500.0,"unit":"scf/STB"},
-        "T": {"min":70.0,"max":295.0,"step":1.0,"value":180.0,"unit":"°F"},
-        "Yapi": {"min":16.0,"max":58.0,"step":0.1,"value":30.0,"unit":"API"},
-        "Ygc": {"min":0.55,"max":1.5,"step":0.01,"value":0.8,"unit":""},
-    }
-    def calc(v):
-        C1 = 0.0004677 if v["Yapi"] <= 30 else 0.000467
-        C2 = 0.00001751 if v["Yapi"] <= 30 else 0.000011
-        C3 = -0.00000001811 if v["Yapi"] <= 30 else 0.000000001337
-        Bo = 1 + C1 * v["Rs"] + C2 * (v["T"] - 60) * (v["Yapi"] / v["Ygc"]) + C3 * v["Rs"] * (v["T"] - 60) * (v["Yapi"] / v["Ygc"])
-        return {"result": Bo, "unit": "bbl/STB"}
-    _live_module("Vasquez & Beggs FVF", inputs, calc)
-
-def oil_fvf_live():
-    inputs = {
-        "Bob": {"min":1.0,"max":2.0,"step":0.01,"value":1.2,"unit":"bbl/STB"},
-        "Pb": {"min":50.0,"max":6000.0,"step":10.0,"value":2000.0,"unit":"psia"},
-        "p": {"min":50.0,"max":10000.0,"step":10.0,"value":3000.0,"unit":"psia"},
-        "co": {"min":1e-7,"max":1e-3,"step":1e-7,"value":1e-6,"unit":"1/psi"},
-    }
-    def calc(v):
-        exp = v["co"] * (v["Pb"] - v["p"])
-        if abs(exp) > 700: return {"result": None, "unit": ""}
-        Bo = v["Bob"] * math.exp(exp)
-        return {"result": Bo, "unit": "bbl/STB"}
-    _live_module("Oil FVF (General)", inputs, calc)
-
-def vasquez_beggs_oil_compressibility_live():
-    inputs = {
-        "Rsb": {"min":20.0,"max":2070.0,"step":10.0,"value":500.0,"unit":"scf/STB"},
-        "T": {"min":70.0,"max":295.0,"step":1.0,"value":180.0,"unit":"°F"},
-        "Yg": {"min":0.55,"max":1.5,"step":0.01,"value":0.7,"unit":""},
-        "Yapi": {"min":16.0,"max":58.0,"step":0.1,"value":30.0,"unit":"API"},
-        "p": {"min":50.0,"max":10000.0,"step":10.0,"value":2000.0,"unit":"psia"},
-    }
-    def calc(v):
-        co = (5 * v["Rsb"] + 17.2 * v["T"] - 1180 * v["Yg"] + 12.61 * v["Yapi"] - 1433) / (v["p"] * 1e5)
-        return {"result": co, "unit": "1/psi"}
-    _live_module("Vasquez & Beggs Compressibility", inputs, calc)
-
-def beggs_robinson_viscosity_live():
-    inputs = {
-        "Rsb": {"min":20.0,"max":2070.0,"step":10.0,"value":500.0,"unit":"scf/STB"},
-        "T": {"min":70.0,"max":295.0,"step":1.0,"value":180.0,"unit":"°F"},
-        "Yapi": {"min":16.0,"max":58.0,"step":0.1,"value":30.0,"unit":"API"},
-    }
-    def calc(v):
-        x = v["T"] ** (-1.163) * math.exp(6.9824 - 0.04658 * v["Yapi"])
-        mu_od = 10 ** x - 1.0
-        A = 10.715 * (v["Rsb"] + 100) ** (-0.515)
-        B = 5.44 * (v["Rsb"] + 150) ** (-0.338)
-        mu_os = A * mu_od ** B
-        return {"result": mu_os, "unit": "cP"}
-    _live_module("Beggs & Robinson Viscosity", inputs, calc)
-
-def vasquez_beggs_undersaturated_viscosity_live():
-    inputs = {
-        "mu_ob": {"min":0.1,"max":100.0,"step":0.1,"value":1.0,"unit":"cP"},
-        "p": {"min":50.0,"max":10000.0,"step":10.0,"value":3000.0,"unit":"psia"},
-        "pb": {"min":50.0,"max":6000.0,"step":10.0,"value":2000.0,"unit":"psia"},
-    }
-    def calc(v):
-        m = 2.6 * v["p"] ** 1.187 * math.exp(-11.513 - 8.98e-5 * v["p"])
-        mu_o = v["mu_ob"] * (v["p"] / v["pb"]) ** m
-        return {"result": mu_o, "unit": "cP"}
-    _live_module("Vasquez & Beggs Undersaturated Viscosity", inputs, calc)
-
-# ------------------------------------------------------------------ #
-# 6. GENERIC LIVE MODULE
-# ------------------------------------------------------------------ #
-def _live_module(title, inputs, compute, default_chart="polar", dynamic_components=False):
-    st.markdown(f"### {title} – Live Sensitivity")
-    vals = {}
-    for k, cfg in inputs.items():
-        vals[k] = st.slider(
-            f"{k} ({cfg.get('unit','')})",
-            min_value=cfg["min"], max_value=cfg["max"],
-            value=cfg["value"], step=cfg["step"],
-            key=f"live_{title}_{k}"
-        )
-    if dynamic_components:
-        C = int(vals.get("C", 1))
-        for i in range(1, C+1):
-            st.session_state[f"mass_{i}"] = st.slider(f"Mass comp {i}", 0.1, 1000.0, 10.0, 0.1, key=f"mass_{i}")
-            st.session_state[f"dens_{i}"] = st.slider(f"Density comp {i}", 10.0, 100.0, 50.0, 0.1, key=f"dens_{i}")
-
-    out = compute(vals)
-    result = out.get("result")
-    if result is not None:
-        st.success(f"**Result:** {result:.5f} {out.get('unit','')}")
-
-    sweep_key = st.selectbox("Sweep variable", options=list(inputs.keys()), key=f"sweep_{title}")
-    npts = 50
-    sweep_vals = np.linspace(inputs[sweep_key]["min"], inputs[sweep_key]["max"], npts)
-    series = {"Result": []}
-    fixed = {k: v for k, v in vals.items() if k != sweep_key}
-    for sv in sweep_vals:
-        fixed[sweep_key] = sv
-        res = compute(fixed)
-        series["Result"].append(res.get("result") or 0)
-    df = pd.DataFrame(series, index=sweep_vals)
-    df.index.name = sweep_key
-
-    chart_type = st.radio("Chart type", ["polar", "line", "bar", "radar", "scatter"],
-                          index=["polar","line","bar","radar","scatter"].index(default_chart),
-                          horizontal=True, key=f"ctype_{title}")
-
-    fig = go.Figure()
-    colors = ["#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd"]
-    if chart_type == "polar":
-        shift = abs(df.min().min()) + 1 if (df<0).any().any() else 0
-        fig.add_trace(go.Scatterpolar(r=df["Result"]+shift, theta=df.index, mode="lines", name="Result", line=dict(color=colors[0])))
-        fig.update_layout(polar=dict(radialaxis=dict(range=[shift, df.max().max()+shift])))
-    elif chart_type == "line":
-        fig.add_trace(go.Scatter(x=df.index, y=df["Result"], mode="lines+markers", name="Result"))
-    elif chart_type == "bar":
-        fig.add_trace(go.Bar(x=df.index, y=df["Result"], name="Result", marker_color=colors[0]))
-        fig.update_layout(barmode="group")
-    elif chart_type == "radar":
-        fig.add_trace(go.Scatterpolar(r=df["Result"].tolist()+[df["Result"].iloc[0]], theta=df.index.tolist()+[df.index[0]], fill="toself", name="Result"))
-    elif chart_type == "scatter":
-        fig.add_trace(go.Scatter(x=df.index, y=df["Result"], mode="markers", name="Result"))
-
-    fig.update_layout(height=500, template="plotly_dark" if st.get_option("theme.backgroundColor")=="#0e1117" else "plotly")
-    st.plotly_chart(fig, use_container_width=True)
-    with st.expander("Raw data"):
-        st.dataframe(df.style.format("{:.5f}"))
-
-# ------------------------------------------------------------------ #
-# 7. MAIN
-# ------------------------------------------------------------------ #
 def main():
     st.title("Oil Properties Calculator")
     st.markdown("Select a formula from the sidebar to compute oil and gas properties.")
-
-    st.markdown(
-        """
-        <style>
-        [data-testid="stSidebar"] {min-width:400px; max-width:500px; position:fixed; top:0; left:0; height:100vh; overflow-y:auto; z-index:9999;}
-        [data-testid="stSidebarNav"] {position:sticky; top:0;}
-        [data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] {display:none !important;}
-        @media (max-width: 640px) {
-            [data-testid="stSidebar"] {display:block !important; width:400px !important; transform:translateX(0)!important;}
-            [data-testid="stAppViewContainer"] {margin-left:400px !important;}
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.sidebar.header("Formulas Menu")
+    
     menu_options = {
         "Oil Density (Basic)": oil_density_1,
         "Oil Density (At Pressure)": oil_density_2,
@@ -619,10 +282,49 @@ def main():
         "Vasquez and Beggs Oil Isothermal Compressibility": vasquez_beggs_oil_compressibility,
         "Beggs and Robinson Oil Viscosity": beggs_robinson_viscosity,
         "Vasquez and Beggs Undersaturated Oil Viscosity": vasquez_beggs_undersaturated_viscosity,
-        "Live Sensitivity Analyzer": live_sensitivity_analyzer,
     }
-
+    
+    # Customize sidebar to be always visible and prevent collapse
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebar"] {
+            min-width: 400px;
+            max-width: 500px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            overflow-y: auto;
+            z-index: 9999;
+        }
+        [data-testid="stSidebarNav"] {
+            position: sticky;
+            top: 0;
+        }
+        /* Disable collapse button and responsive hiding */
+        [data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] {
+            display: none !important;
+        }
+        /* Ensure sidebar is visible on all screen sizes */
+        @media (max-width: 640px) {
+            [data-testid="stSidebar"] {
+                display: block !important;
+                width: 400px !important;
+                transform: translateX(0) !important;
+            }
+            [data-testid="stAppViewContainer"] {
+                margin-left: 400px !important;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    st.sidebar.header("Formulas Menu")
     choice = st.sidebar.selectbox("Select Formula", list(menu_options.keys()))
+    
     menu_options[choice]()
 
 if __name__ == "__main__":
